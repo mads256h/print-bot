@@ -29,9 +29,13 @@ void setup() {
 
 void loop() {
   auto line = readline();
+  if (line.startsWith("M105")) {
+    Serial.write("ok T:251 B:200\n");
+    return;
+  }
   if (line.startsWith("M190")) {
     for (int i = 0; i < 10; i++) {
-      Serial.write("T82, W82, E92\n");
+      Serial.write("T:201 B:117\n");
       delay(2000);
     }
   }

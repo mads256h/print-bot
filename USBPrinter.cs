@@ -12,6 +12,38 @@ public enum PrintingStatus
     Paused
 }
 
+public class PrinterInfo
+{
+    public TemperatureInfo TemperatureInfo { get; }
+
+    public PrinterInfo(TemperatureInfo temperatureInfo)
+    {
+        TemperatureInfo = temperatureInfo;
+    }
+
+    public override string ToString()
+    {
+        return TemperatureInfo.ToString();
+    }
+}
+
+public class TemperatureInfo
+{
+    public string ExtruderTemp { get; }
+    public string BedTemp { get; }
+
+    public TemperatureInfo(string extruderTemp, string bedTemp)
+    {
+        ExtruderTemp = extruderTemp;
+        BedTemp = bedTemp;
+    }
+
+    public override string ToString()
+    {
+        return $"ExtruderTemp: {ExtruderTemp}, BedTemp: {BedTemp}";
+    }
+}
+
 public static class PrintingStatusExtensions
 {
     public static string ToDisplayString(this PrintingStatus printingStatus)
@@ -55,10 +87,15 @@ public sealed class USBPrinter : IDisposable
 
         _customCommandHandlers = new Dictionary<string, Action>
         {
+            { "M105", GetTemperatureData },
             { "M109", WaitForTemperature },
             { "M190", WaitForTemperature }
         };
     }
+    
+    public delegate void TemperatureChangeHandler(TemperatureInfo info);
+
+    public event TemperatureChangeHandler OnTemperatureChange;
 
     public void Exit()
     {
@@ -186,11 +223,44 @@ public sealed class USBPrinter : IDisposable
         }
     }
 
+    public PrinterInfo GetPrinterInfo()
+    {
+        TemperatureInfo tempInfo = new TemperatureInfo("Invalid", "Invalid");
+        Pause();
+        var t = new TemperatureChangeHandler((info) => tempInfo = info);
+        OnTemperatureChange += t; 
+        HandleCommand("M115");
+        HandleCommand("M105");
+        OnTemperatureChange -= t;
+        Resume();
+
+        return new PrinterInfo(tempInfo);
+    }
+
     private void PortOnErrorReceived(object sender, SerialErrorReceivedEventArgs e)
     {
         throw new NotImplementedException();
     }
 
+    private void GetTemperatureData()
+    {
+        string t = _port.ReadLine();
+        Console.WriteLine(t);
+        var split = t.Split(" ");
+        var status = split[0];
+        if (status != "ok")
+        {
+            throw new Exception();
+        }
+
+        if (split.Length == 3)
+        {
+            var extruderTemp = split[1].Replace("T:", string.Empty);
+            var bedTemp = split[2].Replace("B:", string.Empty);
+            OnTemperatureChange?.Invoke(new TemperatureInfo(extruderTemp, bedTemp));
+        }
+    }
+    
     private void WaitForTemperature()
     {
         lock (_statusSyncronizer)
@@ -199,7 +269,10 @@ public sealed class USBPrinter : IDisposable
         }
 
         string t;
-        for (t = _port.ReadLine(); t != "ok"; t = _port.ReadLine()) Console.WriteLine(t);
+        for (t = _port.ReadLine(); t != "ok"; t = _port.ReadLine())
+        {
+            Console.WriteLine(t);
+        }
 
         lock (_statusSyncronizer)
         {

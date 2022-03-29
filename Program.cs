@@ -33,6 +33,8 @@ internal class Program
         printer.SendGCode(gcode);
         Console.WriteLine(printer.GetPrintingStatus().ToDisplayString());
 
+        Console.WriteLine(printer.GetPrinterInfo());
+        
         Thread.Sleep(1000);
         printer.Pause();
         Console.WriteLine(printer.GetPrintingStatus().ToDisplayString());
@@ -47,8 +49,6 @@ internal class Program
 
         printer.SendGCode("M109");
         Console.WriteLine(printer.GetPrintingStatus().ToDisplayString());
-
-        printer.Exit();
 
         await t;
 
