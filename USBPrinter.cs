@@ -204,9 +204,15 @@ public sealed class USBPrinter : IDisposable
         {
             HandleCommand(command);
         }
-        
-        if (_actions.Count == 0)
-            ChangePrintingStatus(PrintingStatus.Idling);
+
+        lock (_actions)
+        {
+            if (_actions.Count == 0)
+            {
+                Reset(null);
+                ChangePrintingStatus(PrintingStatus.Idling);
+            }
+        }
         /*
         lock (_currentCancellationSource)
         {
