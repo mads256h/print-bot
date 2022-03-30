@@ -2,56 +2,58 @@
 
 internal class Program
 {
-    public static async Task Main(string[] args)
+    public static int Main(string[] args)
     {
-        Console.WriteLine("Hello, World!");
-        var printer = new USBPrinter("/dev/ttyACM0", 9600);
-
-        Thread.Sleep(2000);
-
-        var t = printer.Run();
-        Console.WriteLine(printer.GetPrintingStatus());
-
-        // Reset to home position
-        // This also enables movement
-        printer.SendGCode("G28 X Y Z");
-        Console.WriteLine(printer.GetPrintingStatus());
-
-        var gcode = new[]
+        var printer = new USBPrinter("/dev/ttyACM0", 250000);
+        printer.OnStartupInfo += (startupInfo) =>
         {
-            "G1 X2 Y2",
-            "; Comment",
-            "M80 ; End of line comment",
-            "M190 S60",
-            "M191",
-            "M192",
-            "M193",
-            "M194",
-            "M195"
+            Console.WriteLine(startupInfo);
         };
-
-        printer.SendGCode(gcode);
-        Console.WriteLine(printer.GetPrintingStatus().ToDisplayString());
-
-        Console.WriteLine(printer.GetPrinterInfo());
+        
+        Thread.Sleep(5000);
+        printer.ReadStartupInfo();
+        printer.PostGCode(new[]{
+            "G28 X Y Z",
+            "G1 F10000 X100 Y100",
+            "G1 X0 Y100",
+            "G1 X100 Y0",
+            "G1 X0 Y0",
+            "G1 X100 Y100",
+            "G1 X0 Y100",
+            "G1 X100 Y0",
+            "G1 X0 Y0",
+            "G1 X100 Y100",
+            "G1 X0 Y100",
+            "G1 X100 Y0",
+            "G1 X0 Y0",
+            "G1 X100 Y100",
+            "G1 X0 Y100",
+            "G1 X100 Y0",
+            "G1 X0 Y0",
+            "G1 X100 Y100",
+            "G1 X0 Y100",
+            "G1 X100 Y0",
+            "G1 X0 Y0",
+        });
+        Thread.Sleep(1000);
+        printer.Abort();
+        Console.WriteLine("Pausing for 5 seconds");
+        Thread.Sleep(5000);
+        //printer.Resume();
+        Console.WriteLine("Resuming");
+        
+        printer.InterruptWithCode("G1 X200 Y200");
         
         Thread.Sleep(1000);
-        printer.Pause();
-        Console.WriteLine(printer.GetPrintingStatus().ToDisplayString());
+        printer.InterruptWithCode("G1 X200 Y0");
 
-        Thread.Sleep(2000);
-        printer.Resume();
-        Console.WriteLine(printer.GetPrintingStatus().ToDisplayString());
-
-        Thread.Sleep(3000);
-        printer.Abort();
-        Console.WriteLine(printer.GetPrintingStatus().ToDisplayString());
-
-        printer.SendGCode("M109");
-        Console.WriteLine(printer.GetPrintingStatus().ToDisplayString());
-
-        await t;
-
+        while (!printer.Events.IsCompleted)
+        {
+            printer.Events.Take()();
+        }
+        
         printer.Dispose();
+
+        return 0;
     }
 }

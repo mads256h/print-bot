@@ -10,7 +10,12 @@
 
     <ItemGroup>
         <PackageReference Include="Discord.Net" Version="3.4.1" />
-        <PackageReference Include="System.IO.Ports" Version="6.0.0" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <None Update="serialport.py">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </None>
     </ItemGroup>
 
 </Project>
