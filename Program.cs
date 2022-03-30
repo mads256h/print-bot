@@ -1,6 +1,5 @@
 ﻿using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Net;
 using Discord;
 using Discord.WebSocket;
 using Microsoft.Extensions.Configuration;
@@ -16,7 +15,7 @@ internal class Program
     private readonly ulong _startupMessageId;
     private readonly ulong _statusMessageId;
 
-    private USBPrinter _usbPrinter;
+    private USBPrinter? _usbPrinter;
 
     private readonly BlockingCollection<Action> _eventQueue = new BlockingCollection<Action>();
 
@@ -33,7 +32,7 @@ internal class Program
     private Program()
     {
         var configuration = new ConfigurationBuilder()
-            .AddJsonFile("config.json", optional: true)
+            .AddJsonFile("config.json")
             .Build();
 
         _serialPort = configuration["serialport"] ?? throw new InvalidOperationException();
@@ -64,8 +63,6 @@ internal class Program
         {
             _eventQueue.Take()();
         }
-        
-        _usbPrinter.Dispose();
     }
 
     private Task OnReady()
@@ -88,6 +85,7 @@ internal class Program
     private async Task OnMessage(SocketMessage message)
     {
         Debug.Assert(_textChannel != null, nameof(_textChannel) + " != null");
+        Debug.Assert(_usbPrinter != null, nameof(_usbPrinter) + " != null");
 
         if (message.Channel.Id == _textChannel.Id)
         {
