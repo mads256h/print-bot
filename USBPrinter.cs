@@ -1,122 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.IO.Enumeration;
-using System.Reactive.Joins;
-using System.Reflection.Metadata;
 
 namespace print_bot;
-
-public enum PrintingStatus
-{
-    Idling,
-    Heating,
-    Printing,
-    Paused
-}
-
-public class PrinterInfo
-{
-    public TemperatureInfo TemperatureInfo { get; }
-
-    public PrinterInfo(TemperatureInfo temperatureInfo)
-    {
-        TemperatureInfo = temperatureInfo;
-    }
-
-    public override string ToString()
-    {
-        return TemperatureInfo.ToString();
-    }
-}
-
-public class TemperatureInfo
-{
-    public string ExtruderTemp { get; }
-    public string BedTemp { get; }
-
-    public TemperatureInfo(string extruderTemp, string bedTemp)
-    {
-        ExtruderTemp = extruderTemp;
-        BedTemp = bedTemp;
-    }
-
-    public override string ToString()
-    {
-        return $"ExtruderTemp: {ExtruderTemp}, BedTemp: {BedTemp}";
-    }
-}
-
-public static class PrintingStatusExtensions
-{
-    public static string ToDisplayString(this PrintingStatus printingStatus)
-    {
-        switch (printingStatus)
-        {
-            case PrintingStatus.Idling:
-                return "Printer is idling";
-            case PrintingStatus.Heating:
-                return "Printer is heating";
-            case PrintingStatus.Printing:
-                return "Printer is printing";
-            case PrintingStatus.Paused:
-                return "Printer is paused";
-            default:
-                throw new ArgumentOutOfRangeException(nameof(printingStatus), printingStatus, null);
-        }
-    }
-}
-
-public class StartupInfo
-{
-    public StartupInfo(string marlinVersion, string lastUpdated, string version, string freeMemory, string plannerBufferBytes, string stepsPerUnit, string maximumFeedRates, string maximumAcceleration, string acceleration, string advancedVariables, string homeOffset, string pidSettings, string sdCardStatus)
-    {
-        MarlinVersion = marlinVersion;
-        LastUpdated = lastUpdated;
-        Version = version;
-        FreeMemory = freeMemory;
-        PlannerBufferBytes = plannerBufferBytes;
-        StepsPerUnit = stepsPerUnit;
-        MaximumFeedRates = maximumFeedRates;
-        MaximumAcceleration = maximumAcceleration;
-        Acceleration = acceleration;
-        AdvancedVariables = advancedVariables;
-        HomeOffset = homeOffset;
-        PidSettings = pidSettings;
-        SDCardStatus = sdCardStatus;
-    }
-
-    public string MarlinVersion { get; }
-    public string LastUpdated { get; }
-    public string Version { get; }
-    public string FreeMemory { get; }
-    public string PlannerBufferBytes { get; }
-    public string StepsPerUnit { get; }
-    public string MaximumFeedRates { get; }
-    public string MaximumAcceleration { get; }
-    public string Acceleration { get; }
-    public string AdvancedVariables { get; }
-    public string HomeOffset { get; }
-    public string PidSettings { get; }
-    public string SDCardStatus { get; }
-
-    public override string ToString()
-    {
-        return
-            $"MarlinVersion: {MarlinVersion}\n" +
-            $"LastUpdated: {LastUpdated}\n" +
-            $"Version: {Version}\n" +
-            $"FreeMemory: {FreeMemory}\n" +
-            $"PlannerBufferBytes: {PlannerBufferBytes}\n" +
-            $"StepsPerUnit: {StepsPerUnit}\n" +
-            $"MaximumFeedRates: {MaximumFeedRates}\n" +
-            $"MaximumAcceleration: {MaximumAcceleration}\n" +
-            $"Acceleration: {Acceleration}\n" +
-            $"AdvancedVariables: {AdvancedVariables}\n" +
-            $"HomeOffset: {HomeOffset}\n" +
-            $"PidSettings: {PidSettings}\n" +
-            $"SDCardStatus: {SDCardStatus}";
-    }
-}
 
 public sealed class USBPrinter : IDisposable
 {
@@ -150,6 +35,8 @@ public sealed class USBPrinter : IDisposable
             { "M109", WaitForTemperature },
             { "M190", WaitForTemperature }
         };
+        
+        _actions.Add(ReadStartupInfo);
 
         _runThread = new Thread(RunThread);
         _runThread.Start();
@@ -165,11 +52,11 @@ public sealed class USBPrinter : IDisposable
 
     public BlockingCollection<Action> Events { get; } = new BlockingCollection<Action>();
 
-    public event Action<StartupInfo> OnStartupInfo;
+    public event Action<StartupInfo>? OnStartupInfo;
 
-    public event Action<TemperatureInfo> OnTemperatureInfo;
+    public event Action<TemperatureInfo>? OnTemperatureInfo;
 
-    public event Action<PrintingStatus> OnPrintingStatus;
+    public event Action<PrintingStatus>? OnPrintingStatus;
 
     private void RunThread()
     {
@@ -190,7 +77,9 @@ public sealed class USBPrinter : IDisposable
             }
         }
     }
-
+    
+    #region Action Queue Methods
+    
     private void QueueConsumer(CancellationTokenSource token)
     {
         lock (_currentCancellationSource)
@@ -209,7 +98,7 @@ public sealed class USBPrinter : IDisposable
         {
             if (_actions.Count == 0)
             {
-                Reset(null);
+                Reset(new CancellationTokenSource());
                 ChangePrintingStatus(PrintingStatus.Idling);
             }
         }
@@ -220,6 +109,22 @@ public sealed class USBPrinter : IDisposable
         }
         */
     }
+    
+
+    private void Reset(CancellationTokenSource tokenSource)
+    {
+        // Turn off extruder heater
+        HandleCommand("M104 SO");
+        
+        // Turn off bed heater
+        HandleCommand("M140 S0");
+        
+        // Go home
+        HandleCommand("G28 X Y Z");
+    }
+
+    #endregion
+
 
     private void ChangePrintingStatus(PrintingStatus printingStatus)
     {
@@ -253,7 +158,7 @@ public sealed class USBPrinter : IDisposable
         Pause();
         lock (_actions)
         {
-            _actions.Add((token) => HandleCommand(gcode));
+            _actions.Add((_) => HandleCommand(gcode));
         }
         Resume();
     }
@@ -288,18 +193,6 @@ public sealed class USBPrinter : IDisposable
         }
     }
 
-    private void Reset(CancellationTokenSource tokenSource)
-    {
-        // Turn off extruder heater
-        HandleCommand("M104 SO");
-        
-        // Turn off bed heater
-        HandleCommand("M140 S0");
-        
-        // Go home
-        HandleCommand("G28 X Y Z");
-    }
-
     private string ReadLine()
     {
         return _process.StandardOutput.ReadLine() ?? throw new InvalidOperationException();
@@ -310,7 +203,7 @@ public sealed class USBPrinter : IDisposable
         _process.StandardInput.WriteLine(line);
     }
 
-    public void ReadStartupInfo()
+    private void ReadStartupInfo(CancellationTokenSource token)
     {
         string RemoveEcho()
         {
