@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.IO.Enumeration;
 using System.Reactive.Joins;
+using System.Reflection.Metadata;
 
 namespace print_bot;
 
@@ -128,6 +130,9 @@ public sealed class USBPrinter : IDisposable
 
     private readonly Thread _runThread;
 
+    private readonly object _printingStatusLock = new object();
+    private PrintingStatus _printingStatus = PrintingStatus.Idling;
+
     public USBPrinter(string port, int baudrate)
     {
         var psi = new ProcessStartInfo("python", $"serialport.py \"{port}\" {baudrate}")
@@ -141,7 +146,7 @@ public sealed class USBPrinter : IDisposable
 
         _customCommandHandlers = new Dictionary<string, Action>
         {
-            //{ "M105", GetTemperatureData },
+            { "M105", GetTemperatureData },
             { "M109", WaitForTemperature },
             { "M190", WaitForTemperature }
         };
@@ -150,9 +155,21 @@ public sealed class USBPrinter : IDisposable
         _runThread.Start();
     }
 
+    private void GetTemperatureData()
+    {
+        if (!ReadLine().StartsWith("ok"))
+        {
+            throw new Exception();
+        }
+    }
+
     public BlockingCollection<Action> Events { get; } = new BlockingCollection<Action>();
 
     public event Action<StartupInfo> OnStartupInfo;
+
+    public event Action<TemperatureInfo> OnTemperatureInfo;
+
+    public event Action<PrintingStatus> OnPrintingStatus;
 
     private void RunThread()
     {
@@ -180,16 +197,34 @@ public sealed class USBPrinter : IDisposable
         {
             _currentCancellationSource = token;
         }
+        
+        ChangePrintingStatus(PrintingStatus.Printing);
+        
         while (!token.IsCancellationRequested && _commandQueue.TryDequeue(out var command))
         {
             HandleCommand(command);
         }
+        
+        if (_actions.Count == 0)
+            ChangePrintingStatus(PrintingStatus.Idling);
         /*
         lock (_currentCancellationSource)
         {
             _currentCancellationSource.Dispose();
         }
         */
+    }
+
+    private void ChangePrintingStatus(PrintingStatus printingStatus)
+    {
+        lock (_printingStatusLock)
+        {
+            if (_printingStatus != printingStatus)
+            {
+                _printingStatus = printingStatus;
+                Events.Add(() => OnPrintingStatus?.Invoke(printingStatus));
+            }
+        }
     }
 
     public void PostGCode(string[] gcode)
@@ -240,6 +275,23 @@ public sealed class USBPrinter : IDisposable
             _currentCancellationSource.Cancel();
         }
         _commandQueue.Clear();
+
+        lock (_actions)
+        {
+            _actions.Add(Reset);
+        }
+    }
+
+    private void Reset(CancellationTokenSource tokenSource)
+    {
+        // Turn off extruder heater
+        HandleCommand("M104 SO");
+        
+        // Turn off bed heater
+        HandleCommand("M140 S0");
+        
+        // Go home
+        HandleCommand("G28 X Y Z");
     }
 
     private string ReadLine()
@@ -254,30 +306,6 @@ public sealed class USBPrinter : IDisposable
 
     public void ReadStartupInfo()
     {
-        /*
-        start
-        echo:Marlin 1.0.0
-        echo: Last Updated: Mar 15 2018 13:04:08 | Author: Vers:_3.3.0
-        Compiled: Mar 15 2018
-        echo: Free Memory: 2055  PlannerBufferBytes: 1232
-        echo:Stored settings retrieved
-        echo:Steps per unit:
-        echo:  M92 X80.00 Y80.00 Z200.00 E369.00
-        echo:Maximum feedrates (mm/s):
-        echo:  M203 X300.00 Y300.00 Z40.00 E45.00
-        echo:Maximum Acceleration (mm/s2):
-        echo:  M201 X9000 Y9000 Z100 E10000
-        echo:Acceleration: S=acceleration, T=retract acceleration
-        echo:  M204 S5000.00 T3000.00
-        echo:Advanced variables: S=Min feedrate (mm/s), T=Min travel feedrate (mm/s), B=minimum segment time (ms), X=maximum XY jerk (mm/s),  Z=maximum Z jerk (mm/s),  E=maximum E jerk (mm/s)
-        echo:  M205 S0.00 T0.00 B20000 X30.00 Z0.40 E5.00
-        echo:Home offset (mm):
-        echo:  M206 X0.00 Y0.00 Z-14.65
-        echo:PID settings:
-        echo:   M301 P10.03 I1.50 D70.00
-        echo:SD card ok
-        */
-
         string RemoveEcho()
         {
             return
@@ -329,7 +357,7 @@ public sealed class USBPrinter : IDisposable
 
         var startupInfo = new StartupInfo(marlinVersion, lastUpdated, version, freeMemory, plannerBufferBytes, stepsPerUnit, maximumFeedRates, maximumAcceleration, acceleration, advancedVaraibles, homeOffset, pidSettings, sdCardStatus);
         
-        Events.Add(() => OnStartupInfo.Invoke(startupInfo));
+        Events.Add(() => OnStartupInfo?.Invoke(startupInfo));
     }
 
     private void HandleCommand(string command)
@@ -364,9 +392,17 @@ public sealed class USBPrinter : IDisposable
         for (t = ReadLine(); t != "ok"; t = ReadLine())
         {
             Console.WriteLine(t);
+            var splitTemps = t.Split(" ");
+            var extruderTemp = splitTemps[0].Replace("T:", string.Empty);
+            var bedTemp = splitTemps[2].Replace("B:", string.Empty);
+
+            var temperatureInfo = new TemperatureInfo(extruderTemp, bedTemp);
+            Events.Add(() => OnTemperatureInfo?.Invoke(temperatureInfo));
+            ChangePrintingStatus(PrintingStatus.Heating);
         }
 
         Console.WriteLine(t);
+        ChangePrintingStatus(PrintingStatus.Printing);
     }
 
     public void Dispose()
