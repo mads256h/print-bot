@@ -28,7 +28,7 @@ public sealed class USBPrinter : IDisposable
         {
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
-            RedirectStandardError = true
+            RedirectStandardError = true,
         };
 
         _process = Process.Start(psi) ?? throw new InvalidOperationException();
@@ -213,7 +213,7 @@ public sealed class USBPrinter : IDisposable
                 ReadLine().Replace("echo:", string.Empty)
                     .Trim();
         }
-        
+
         if (ReadLine() != "start") throw new Exception();
         var marlinVersion = RemoveEcho();
         var versionLine = RemoveEcho();
@@ -232,10 +232,10 @@ public sealed class USBPrinter : IDisposable
             .Replace("PlannerBufferBytes:", string.Empty)
             .Trim();
         ReadLine();
-        
+
         ReadLine();
         var stepsPerUnit = RemoveEcho();
-        
+
         ReadLine();
         var maximumFeedRates = RemoveEcho();
 
@@ -256,8 +256,10 @@ public sealed class USBPrinter : IDisposable
 
         var sdCardStatus = RemoveEcho();
 
-        var startupInfo = new StartupInfo(marlinVersion, lastUpdated, version, freeMemory, plannerBufferBytes, stepsPerUnit, maximumFeedRates, maximumAcceleration, acceleration, advancedVaraibles, homeOffset, pidSettings, sdCardStatus);
-        
+        var startupInfo = new StartupInfo(marlinVersion, lastUpdated, version, freeMemory, plannerBufferBytes,
+            stepsPerUnit, maximumFeedRates, maximumAcceleration, acceleration, advancedVaraibles, homeOffset,
+            pidSettings, sdCardStatus);
+
         _eventQueue.Add(() => OnStartupInfo?.Invoke(startupInfo));
     }
 

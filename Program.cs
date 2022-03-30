@@ -5,6 +5,7 @@ using Discord;
 using Discord.WebSocket;
 using Microsoft.Extensions.Configuration;
 using print_bot;
+using print_bot.PrinterStatus;
 
 internal class Program
 {
@@ -15,7 +16,7 @@ internal class Program
     private readonly ulong _startupMessageId;
     private readonly ulong _statusMessageId;
 
-    private readonly USBPrinter _usbPrinter;
+    private USBPrinter _usbPrinter;
 
     private readonly BlockingCollection<Action> _eventQueue = new BlockingCollection<Action>();
 
@@ -25,9 +26,9 @@ internal class Program
     private SocketGuild? _guild;
     private SocketTextChannel? _textChannel;
 
-    private PrintingStatus _printingStatus;
-    
     private DateTime _lastUpdate = DateTime.Now;
+
+    private Status _status = new Status();
 
     private Program()
     {
@@ -42,7 +43,6 @@ internal class Program
         _startupMessageId = ulong.Parse(configuration["startup_message"] ?? throw new InvalidOperationException());
         _statusMessageId = ulong.Parse(configuration["status_message"] ?? throw new InvalidOperationException());
 
-        _usbPrinter = new USBPrinter(_serialPort, _baudrate, _eventQueue);
     }
     
     private static async Task Log(LogMessage logMessage)
@@ -52,10 +52,6 @@ internal class Program
 
     private async Task AsyncMain(string[] args)
     {
-        _usbPrinter.OnStartupInfo += OnStartupInfo;
-        _usbPrinter.OnPrintingStatus += OnPrintingStatus;
-        _usbPrinter.OnTemperatureInfo += OnTemperatureInfo;
-        
         _client.Log += Log;
         _client.Ready += OnReady;
         _client.MessageReceived += OnMessage;
@@ -63,9 +59,6 @@ internal class Program
         await _client.LoginAsync(TokenType.Bot, Environment.GetEnvironmentVariable("TOKEN"));
         await _client.StartAsync();
 
-        _usbPrinter.PostGCode(new[]{
-            "G28 X Y Z",
-        });
 
         while (!_eventQueue.IsCompleted)
         {
@@ -77,6 +70,15 @@ internal class Program
 
     private Task OnReady()
     {
+        _usbPrinter = new USBPrinter(_serialPort, _baudrate, _eventQueue);
+        _usbPrinter.OnStartupInfo += OnStartupInfo;
+        _usbPrinter.OnPrintingStatus += OnPrintingStatus;
+        _usbPrinter.OnTemperatureInfo += OnTemperatureInfo;
+        
+        _usbPrinter.PostGCode(new[]{
+            "G28 X Y Z",
+        });
+        
         _guild = _client.GetGuild(_guildId);
         _textChannel = _guild.GetTextChannel(_channelId);
         
@@ -103,6 +105,12 @@ internal class Program
                     using (var client = new HttpClient())
                     {
                         var str = await client.GetStringAsync(new Uri(url));
+                        if (url.Last() == '/')
+                        {
+                            url = url.Substring(0, url.Length - 2);
+                        }
+
+                        _status.FileName = url.Split('/').Last();
                         _usbPrinter.PostGCode(str.Split("\n"));
                     }
                 }
@@ -135,26 +143,28 @@ internal class Program
 
     private async void OnPrintingStatus(PrintingStatus printingStatus)
     {
-        Debug.Assert(_textChannel != null, nameof(_textChannel) + " != null");
-
-        _printingStatus = printingStatus;
-        await _textChannel.ModifyMessageAsync(_statusMessageId,
-            prop => prop.Content = printingStatus.ToDisplayString());
+        _status.PrintingStatus = printingStatus;
+        await UpdateStatus();
     }
 
     private async void OnTemperatureInfo(TemperatureInfo temperatureInfo)
     {
+        await Console.Out.WriteLineAsync(temperatureInfo.ToString());
+
+        _status.TemperatureInfo = temperatureInfo;
+        
+        if (_lastUpdate + new TimeSpan(0, 0, 5) < DateTime.Now)
+        {
+            await UpdateStatus();
+        }
+    }
+
+    private async Task UpdateStatus()
+    {
         Debug.Assert(_textChannel != null, nameof(_textChannel) + " != null");
 
-        await Console.Out.WriteLineAsync(temperatureInfo.ToString());
-        
-        if (_printingStatus == PrintingStatus.Heating && _lastUpdate + new TimeSpan(0, 0, 5) < DateTime.Now)
-        {
-            await _textChannel.ModifyMessageAsync(_statusMessageId,
-                properties =>
-                    properties.Content = _printingStatus.ToDisplayString() + "\n" + temperatureInfo);
-            _lastUpdate = DateTime.Now;
-        }
+        await _textChannel.ModifyMessageAsync(_statusMessageId,
+            prop => prop.Content = _status.ToString());
     }
     
     public static async Task Main(string[] args)
