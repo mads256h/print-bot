@@ -1,114 +1,165 @@
-﻿using System.Net;
+﻿using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Net;
 using Discord;
 using Discord.WebSocket;
+using Microsoft.Extensions.Configuration;
 using print_bot;
 
 internal class Program
 {
+    private readonly string _serialPort;
+    private readonly ulong _baudrate;
+    private readonly ulong _guildId;
+    private readonly ulong _channelId;
+    private readonly ulong _startupMessageId;
+    private readonly ulong _statusMessageId;
+
+    private readonly USBPrinter _usbPrinter;
+
+    private readonly BlockingCollection<Action> _eventQueue = new BlockingCollection<Action>();
+
+    private readonly DiscordSocketClient _client = new DiscordSocketClient();
+
+
+    private SocketGuild? _guild;
+    private SocketTextChannel? _textChannel;
+
+    private PrintingStatus _printingStatus;
+    
+    private DateTime _lastUpdate = DateTime.Now;
+
+    private Program()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddJsonFile("config.json", optional: true)
+            .Build();
+
+        _serialPort = configuration["serialport"] ?? throw new InvalidOperationException();
+        _baudrate = ulong.Parse(configuration["baudrate"] ?? throw new InvalidOperationException());
+        _guildId = ulong.Parse(configuration["guild"] ?? throw new InvalidOperationException());
+        _channelId = ulong.Parse(configuration["channel"] ?? throw new InvalidOperationException());
+        _startupMessageId = ulong.Parse(configuration["startup_message"] ?? throw new InvalidOperationException());
+        _statusMessageId = ulong.Parse(configuration["status_message"] ?? throw new InvalidOperationException());
+
+        _usbPrinter = new USBPrinter(_serialPort, _baudrate, _eventQueue);
+    }
+    
     private static async Task Log(LogMessage logMessage)
     {
         await Console.Out.WriteLineAsync(logMessage.ToString());
     }
-    
-    public static async Task Main(string[] args)
+
+    private async Task AsyncMain(string[] args)
     {
-        var client = new DiscordSocketClient();
-        client.Log += Log;
-
-        await client.LoginAsync(TokenType.Bot, Environment.GetEnvironmentVariable("TOKEN"));
-        await client.StartAsync();
+        _usbPrinter.OnStartupInfo += OnStartupInfo;
+        _usbPrinter.OnPrintingStatus += OnPrintingStatus;
+        _usbPrinter.OnTemperatureInfo += OnTemperatureInfo;
         
-        var printer = new USBPrinter("/dev/ttyACM0", 250000);
-
-        ITextChannel textChannel = null;
+        _client.Log += Log;
+        _client.Ready += OnReady;
+        _client.MessageReceived += OnMessage;
         
-        client.Ready += async () =>
-        {
-            var guild = client.GetGuild(957955676376797184);
-            textChannel = guild.GetTextChannel(958692640004640828);
+        await _client.LoginAsync(TokenType.Bot, Environment.GetEnvironmentVariable("TOKEN"));
+        await _client.StartAsync();
 
-            printer.OnStartupInfo += async (startupInfo) =>
-            {
-                Console.WriteLine(startupInfo);
-                await textChannel.ModifyMessageAsync(958693485895118898,
-                    properties => properties.Content = startupInfo.ToString());
-            };
-
-            PrintingStatus dprintingStatus = PrintingStatus.Idling;
-            DateTime lastUpdate = DateTime.Now;
-
-            printer.OnTemperatureInfo += async (temperatureInfo) =>
-            {
-                if (dprintingStatus == PrintingStatus.Heating && lastUpdate + new TimeSpan(0, 0, 5) < DateTime.Now)
-                {
-                    await textChannel.ModifyMessageAsync(958696125349625878,
-                        properties =>
-                            properties.Content = dprintingStatus.ToDisplayString() + "\n" + temperatureInfo.ToString());
-                    lastUpdate = DateTime.Now;
-                }
-
-                Console.WriteLine(temperatureInfo);
-            };
-
-            printer.OnPrintingStatus += async (printingStatus) =>
-            {
-                dprintingStatus = printingStatus;
-                await textChannel.ModifyMessageAsync(958696125349625878,
-                    prop => prop.Content = printingStatus.ToDisplayString());
-            };
-        };
-
-        client.MessageReceived += async message =>
-        {
-            if (message.Channel.Id == textChannel.Id)
-            {
-                var content = message.Content;
-                if (content.StartsWith("!gcode"))
-                {
-                    var code = content.Replace("!gcode", string.Empty).Trim();
-                    printer.InterruptWithCode(code);
-                }
-                else if (content.StartsWith("!attachment"))
-                {
-                    if (message.Attachments.Count == 1)
-                    {
-                        var url = message.Attachments.First().Url;
-                        using (var client = new WebClient())
-                        {
-                            var str = await client.DownloadStringTaskAsync(new Uri(url));
-                            printer.PostGCode(str.Split("\n"));
-                        }
-                    }
-                }
-                else if (content == "!pause")
-                {
-                    printer.Pause();
-                }
-                else if (content == "!resume")
-                {
-                    printer.Resume();
-                }
-                else if (content == "!abort")
-                {
-                    printer.Abort();
-                }
-
-                await message.DeleteAsync();
-            }
-        };
-
-        
-        Thread.Sleep(5000);
-        printer.ReadStartupInfo();
-        printer.PostGCode(new[]{
+        _usbPrinter.PostGCode(new[]{
             "G28 X Y Z",
         });
 
-        while (!printer.Events.IsCompleted)
+        while (!_eventQueue.IsCompleted)
         {
-            printer.Events.Take()();
+            _eventQueue.Take()();
         }
         
-        printer.Dispose();
+        _usbPrinter.Dispose();
+    }
+
+    private Task OnReady()
+    {
+        _guild = _client.GetGuild(_guildId);
+        _textChannel = _guild.GetTextChannel(_channelId);
+        
+        return Task.CompletedTask;
+    }
+
+    private async Task OnMessage(SocketMessage message)
+    {
+        Debug.Assert(_textChannel != null, nameof(_textChannel) + " != null");
+
+        if (message.Channel.Id == _textChannel.Id)
+        {
+            var content = message.Content;
+            if (content.StartsWith("!gcode"))
+            {
+                var code = content.Replace("!gcode", string.Empty).Trim();
+                _usbPrinter.InterruptWithCode(code);
+            }
+            else if (content.StartsWith("!attachment"))
+            {
+                if (message.Attachments.Count == 1)
+                {
+                    var url = message.Attachments.First().Url;
+                    using (var client = new HttpClient())
+                    {
+                        var str = await client.GetStringAsync(new Uri(url));
+                        _usbPrinter.PostGCode(str.Split("\n"));
+                    }
+                }
+            }
+            else if (content == "!pause")
+            {
+                _usbPrinter.Pause();
+            }
+            else if (content == "!resume")
+            {
+                _usbPrinter.Resume();
+            }
+            else if (content == "!abort")
+            {
+                _usbPrinter.Abort();
+            }
+
+            await message.DeleteAsync();
+        }
+    }
+
+    private async void OnStartupInfo(StartupInfo startupInfo)
+    {
+        Debug.Assert(_textChannel != null, nameof(_textChannel) + " != null");
+        
+        await Console.Out.WriteLineAsync(startupInfo.ToString());
+        await _textChannel.ModifyMessageAsync(_startupMessageId,
+            properties => properties.Content = startupInfo.ToString());
+    }
+
+    private async void OnPrintingStatus(PrintingStatus printingStatus)
+    {
+        Debug.Assert(_textChannel != null, nameof(_textChannel) + " != null");
+
+        _printingStatus = printingStatus;
+        await _textChannel.ModifyMessageAsync(_statusMessageId,
+            prop => prop.Content = printingStatus.ToDisplayString());
+    }
+
+    private async void OnTemperatureInfo(TemperatureInfo temperatureInfo)
+    {
+        Debug.Assert(_textChannel != null, nameof(_textChannel) + " != null");
+
+        await Console.Out.WriteLineAsync(temperatureInfo.ToString());
+        
+        if (_printingStatus == PrintingStatus.Heating && _lastUpdate + new TimeSpan(0, 0, 5) < DateTime.Now)
+        {
+            await _textChannel.ModifyMessageAsync(_statusMessageId,
+                properties =>
+                    properties.Content = _printingStatus.ToDisplayString() + "\n" + temperatureInfo);
+            _lastUpdate = DateTime.Now;
+        }
+    }
+    
+    public static async Task Main(string[] args)
+    {
+        var program = new Program();
+        await program.AsyncMain(args);
     }
 }

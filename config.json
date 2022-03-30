@@ -1,0 +1,9 @@
+{
+  "serialport": "/dev/ttyACM0",
+  "baudrate": 250000,
+  "guild": 957955676376797184,
+  "channel": 958692640004640828,
+  "startup_message": 958693485895118898,
+  "status_message": 958696125349625878,
+  "token": "INSERT TOKEN HERE"
+}

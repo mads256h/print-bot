@@ -18,8 +18,12 @@ public sealed class USBPrinter : IDisposable
     private readonly object _printingStatusLock = new object();
     private PrintingStatus _printingStatus = PrintingStatus.Idling;
 
-    public USBPrinter(string port, int baudrate)
+    private readonly BlockingCollection<Action> _eventQueue;
+
+    public USBPrinter(string port, ulong baudrate, BlockingCollection<Action> eventQueue)
     {
+        _eventQueue = eventQueue;
+
         var psi = new ProcessStartInfo("python", $"serialport.py \"{port}\" {baudrate}")
         {
             RedirectStandardInput = true,
@@ -49,8 +53,6 @@ public sealed class USBPrinter : IDisposable
             throw new Exception();
         }
     }
-
-    public BlockingCollection<Action> Events { get; } = new BlockingCollection<Action>();
 
     public event Action<StartupInfo>? OnStartupInfo;
 
@@ -133,7 +135,7 @@ public sealed class USBPrinter : IDisposable
             if (_printingStatus != printingStatus)
             {
                 _printingStatus = printingStatus;
-                Events.Add(() => OnPrintingStatus?.Invoke(printingStatus));
+                _eventQueue.Add(() => OnPrintingStatus?.Invoke(printingStatus));
             }
         }
     }
@@ -256,7 +258,7 @@ public sealed class USBPrinter : IDisposable
 
         var startupInfo = new StartupInfo(marlinVersion, lastUpdated, version, freeMemory, plannerBufferBytes, stepsPerUnit, maximumFeedRates, maximumAcceleration, acceleration, advancedVaraibles, homeOffset, pidSettings, sdCardStatus);
         
-        Events.Add(() => OnStartupInfo?.Invoke(startupInfo));
+        _eventQueue.Add(() => OnStartupInfo?.Invoke(startupInfo));
     }
 
     private void HandleCommand(string command)
@@ -296,7 +298,7 @@ public sealed class USBPrinter : IDisposable
             var bedTemp = splitTemps[2].Replace("B:", string.Empty);
 
             var temperatureInfo = new TemperatureInfo(extruderTemp, bedTemp);
-            Events.Add(() => OnTemperatureInfo?.Invoke(temperatureInfo));
+            _eventQueue.Add(() => OnTemperatureInfo?.Invoke(temperatureInfo));
             ChangePrintingStatus(PrintingStatus.Heating);
         }
 
