@@ -62,21 +62,19 @@ public sealed class USBPrinter : IDisposable
 
     private void RunThread()
     {
-        bool isCompleted = false;
-        lock (_actions)
+        while(!_actions.IsCompleted)
         {
-            isCompleted = _actions.IsCompleted;
-        }
-        while(!isCompleted)
-        {
-            var action = _actions.Take();
+            Action<CancellationTokenSource> action;
+            try
+            {
+                action = _actions.Take();
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
             
             action(new CancellationTokenSource());
-            
-            lock (_actions)
-            {
-                isCompleted = _actions.IsCompleted;
-            }
         }
     }
     
@@ -96,13 +94,10 @@ public sealed class USBPrinter : IDisposable
             HandleCommand(command);
         }
 
-        lock (_actions)
+        if (_actions.Count == 0)
         {
-            if (_actions.Count == 0)
-            {
-                Reset(new CancellationTokenSource());
-                ChangePrintingStatus(PrintingStatus.Idling);
-            }
+            Reset(new CancellationTokenSource());
+            ChangePrintingStatus(PrintingStatus.Idling);
         }
         /*
         lock (_currentCancellationSource)
@@ -314,5 +309,6 @@ public sealed class USBPrinter : IDisposable
         _runThread.Join();
         _actions.Dispose();
         _process.Dispose();
+        _eventQueue.CompleteAdding();
     }
 }

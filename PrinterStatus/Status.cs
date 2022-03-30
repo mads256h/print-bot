@@ -11,12 +11,11 @@ public class Status
 
     public override string ToString()
     {
-        Console.WriteLine(FileName);
         var sb = new StringBuilder();
         sb.AppendLine(PrintingStatus.ToDisplayString());
         if (PrintingStatus != PrintingStatus.Idling)
         {
-            sb.AppendLine("File: " + FileName);
+            sb.AppendLine($"File: {FileName}");
         }
         
         if (PrintingStatus == PrintingStatus.Heating)
