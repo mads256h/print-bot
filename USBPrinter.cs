@@ -287,7 +287,7 @@ public sealed class USBPrinter : IDisposable
         }
 
         Console.WriteLine(t);
-        ChangePrintingStatus(PrintingStatus.Idling);
+        ChangePrintingStatus(PrintingStatus.Printing);
     }
 
     public void Dispose()
