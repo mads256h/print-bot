@@ -24,7 +24,7 @@ public sealed class USBPrinter : IDisposable
     {
         _eventQueue = eventQueue;
 
-        var psi = new ProcessStartInfo("python", $"serialport.py \"{port}\" {baudrate}")
+        var psi = new ProcessStartInfo("python3", $"serialport.py \"{port}\" {baudrate}")
         {
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
