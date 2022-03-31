@@ -164,6 +164,7 @@ internal class Program
         {
             await Console.Out.WriteLineAsync("Updating with tempinfo");
             await UpdateStatus();
+            Console.WriteLine("Done with updating tempinfo");
             _lastUpdate = DateTime.Now;
         }
     }
