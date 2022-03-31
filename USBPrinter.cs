@@ -48,6 +48,8 @@ public sealed class USBPrinter : IDisposable
 
     private void GetTemperatureData()
     {
+        Debug.Assert(Thread.CurrentThread == _runThread, "Thread.CurrentThread == _runThread");
+
         if (!ReadLine().StartsWith("ok"))
         {
             throw new Exception();
@@ -62,6 +64,8 @@ public sealed class USBPrinter : IDisposable
 
     private void RunThread()
     {
+        Debug.Assert(Thread.CurrentThread == _runThread, "Thread.CurrentThread == _runThread");
+        
         while(!_actions.IsCompleted)
         {
             Action<CancellationTokenSource> action;
@@ -88,6 +92,7 @@ public sealed class USBPrinter : IDisposable
     
     private void QueueConsumer(CancellationTokenSource token)
     {
+        Debug.Assert(Thread.CurrentThread == _runThread, "Thread.CurrentThread == _runThread");
         lock (_currentCancellationSource)
         {
             _currentCancellationSource = token;
@@ -109,6 +114,7 @@ public sealed class USBPrinter : IDisposable
 
     private void Reset(CancellationTokenSource tokenSource)
     {
+        Debug.Assert(Thread.CurrentThread == _runThread, "Thread.CurrentThread == _runThread");
         // Turn off extruder heater
         HandleCommand("M104 SO");
         
@@ -179,16 +185,19 @@ public sealed class USBPrinter : IDisposable
 
     private string ReadLine()
     {
+        Debug.Assert(Thread.CurrentThread == _runThread, "Thread.CurrentThread == _runThread");
         return _process.StandardOutput.ReadLine() ?? throw new InvalidOperationException();
     }
 
     private void WriteLine(string line)
     {
+        Debug.Assert(Thread.CurrentThread == _runThread, "Thread.CurrentThread == _runThread");
         _process.StandardInput.WriteLine(line);
     }
 
     private void ReadStartupInfo(CancellationTokenSource token)
     {
+        Debug.Assert(Thread.CurrentThread == _runThread, "Thread.CurrentThread == _runThread");
         string RemoveEcho()
         {
             return
@@ -247,6 +256,8 @@ public sealed class USBPrinter : IDisposable
 
     private void HandleCommand(string command)
     {
+        Debug.Assert(Thread.CurrentThread == _runThread, "Thread.CurrentThread == _runThread");
+        
         Console.WriteLine(command);
 
         command = command.Split(";")[0];
@@ -273,6 +284,8 @@ public sealed class USBPrinter : IDisposable
     
     private void WaitForTemperature()
     {
+        Debug.Assert(Thread.CurrentThread == _runThread, "Thread.CurrentThread == _runThread");
+        
         ChangePrintingStatus(PrintingStatus.Heating);
         string t;
         for (t = ReadLine(); t != "ok"; t = ReadLine())
