@@ -125,8 +125,12 @@ internal class Program
             {
                 _usbPrinter.Abort();
             }
+            else
+            {
+                await message.AddReactionAsync(new Emoji("❌"));
+            }
 
-            await message.DeleteAsync();
+            await message.AddReactionAsync(new Emoji("✔"));
         }
     }
 
