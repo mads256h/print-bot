@@ -28,6 +28,7 @@ internal class Program
     private DateTime _lastUpdate = DateTime.Now;
 
     private Status _status = new Status();
+    private bool _updateInProgress = false;
 
     private Program()
     {
@@ -143,6 +144,9 @@ internal class Program
     {
         _status.PrintingStatus = printingStatus;
         await UpdateStatus();
+        //await _client.SetStatusAsync(UserStatus.Online);
+        await _client.SetGameAsync(_status.PrintingStatus.ToEmoji());
+        //await _client.SetActivityAsync(new Game(printingStatus.ToEmoji(), ActivityType.CustomStatus, ActivityProperties.None, _status.ToString()));
     }
 
     private async void OnTemperatureInfo(TemperatureInfo temperatureInfo)
@@ -151,16 +155,19 @@ internal class Program
 
         _status.TemperatureInfo = temperatureInfo;
         
-        if (_lastUpdate + new TimeSpan(0, 0, 5) < DateTime.Now)
+        var nextPossibleUpdate = _lastUpdate + new TimeSpan(0, 0, 5);
+
+        if (nextPossibleUpdate < DateTime.Now)
         {
             await UpdateStatus();
+            _lastUpdate = DateTime.Now;
         }
     }
 
     private async Task UpdateStatus()
     {
         Debug.Assert(_textChannel != null, nameof(_textChannel) + " != null");
-
+        
         await _textChannel.ModifyMessageAsync(_statusMessageId,
             prop => prop.Content = _status.ToString());
     }

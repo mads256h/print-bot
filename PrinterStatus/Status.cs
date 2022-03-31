@@ -12,7 +12,7 @@ public class Status
     public override string ToString()
     {
         var sb = new StringBuilder();
-        sb.AppendLine(PrintingStatus.ToDisplayString());
+        sb.AppendLine(PrintingStatus.ToEmoji() + " " +PrintingStatus.ToDisplayString());
         if (PrintingStatus != PrintingStatus.Idling)
         {
             sb.AppendLine($"File: {FileName}");
