@@ -173,7 +173,7 @@ internal class Program
     {
         Debug.Assert(_textChannel != null, nameof(_textChannel) + " != null");
         
-        await _textChannel.ModifyMessageAsync(_statusMessageId,
+        _textChannel.ModifyMessageAsync(_statusMessageId,
             prop => prop.Content = _status.ToString(), new RequestOptions() {RetryMode = RetryMode.AlwaysRetry});
     }
     
