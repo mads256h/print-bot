@@ -98,10 +98,6 @@ public sealed class USBPrinter : IDisposable
             HandleCommand(command);
         }
 
-        if (_actions.Count == 0)
-        {
-            Reset(new CancellationTokenSource());
-        }
         /*
         lock (_currentCancellationSource)
         {

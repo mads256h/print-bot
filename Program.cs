@@ -97,24 +97,6 @@ internal class Program
                 var code = content.Replace("!gcode", string.Empty).Trim();
                 _usbPrinter.InterruptWithCode(code);
             }
-            else if (content.StartsWith("!attachment"))
-            {
-                if (message.Attachments.Count == 1)
-                {
-                    var url = message.Attachments.First().Url;
-                    using (var client = new HttpClient())
-                    {
-                        var str = await client.GetStringAsync(new Uri(url));
-                        if (url.Last() == '/')
-                        {
-                            url = url.Substring(0, url.Length - 2);
-                        }
-
-                        _status.FileName = url.Split('/').Last();
-                        _usbPrinter.PostGCode(str.Split("\n"));
-                    }
-                }
-            }
             else if (content == "!pause")
             {
                 _usbPrinter.Pause();
@@ -126,6 +108,20 @@ internal class Program
             else if (content == "!abort")
             {
                 _usbPrinter.Abort();
+            }
+            else if (message.Attachments.Count == 1)
+            {
+                _eventQueue.Add(async () =>
+                {
+                    var url = message.Attachments.First().Url;
+                    _status.FileName = url.Split('/').Last();
+                    using (var client = new HttpClient())
+                    {
+                        var str = await client.GetStringAsync(new Uri(url));
+
+                        _usbPrinter.PostGCode(str.Split("\n"));
+                    }
+                });
             }
             else
             {
