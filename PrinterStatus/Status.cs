@@ -17,12 +17,6 @@ public class Status
         {
             sb.AppendLine($"File: {FileName}");
         }
-        
-        if (PrintingStatus == PrintingStatus.Heating)
-        {
-            sb.AppendLine(TemperatureInfo.ToString());
-        }
-
         return sb.ToString();
     }
 }

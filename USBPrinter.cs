@@ -140,22 +140,16 @@ public sealed class USBPrinter : IDisposable
         {
             _commandQueue.Enqueue(command);
         }
-        lock (_actions)
+        if (_actions.Count == 0)
         {
-            if (_actions.Count == 0)
-            {
-                _actions.Add(QueueConsumer);
-            }
+            _actions.Add(QueueConsumer);
         }
     }
 
     public void InterruptWithCode(string gcode)
     {
         Pause();
-        lock (_actions)
-        {
-            _actions.Add((_) => HandleCommand(gcode));
-        }
+        _actions.Add((_) => HandleCommand(gcode));
         Resume();
     }
 
@@ -169,10 +163,7 @@ public sealed class USBPrinter : IDisposable
 
     public void Resume()
     {
-        lock (_actions)
-        {
-            _actions.Add(QueueConsumer);
-        }
+        _actions.Add(QueueConsumer);
     }
 
     public void Abort()
@@ -183,10 +174,7 @@ public sealed class USBPrinter : IDisposable
         }
         _commandQueue.Clear();
 
-        lock (_actions)
-        {
-            _actions.Add(Reset);
-        }
+        _actions.Add(Reset);
     }
 
     private string ReadLine()
@@ -285,6 +273,7 @@ public sealed class USBPrinter : IDisposable
     
     private void WaitForTemperature()
     {
+        ChangePrintingStatus(PrintingStatus.Heating);
         string t;
         for (t = ReadLine(); t != "ok"; t = ReadLine())
         {
@@ -298,6 +287,7 @@ public sealed class USBPrinter : IDisposable
         }
 
         Console.WriteLine(t);
+        ChangePrintingStatus(PrintingStatus.Idling);
     }
 
     public void Dispose()
