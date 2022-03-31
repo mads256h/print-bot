@@ -28,7 +28,6 @@ internal class Program
     private DateTime _lastUpdate = DateTime.Now;
 
     private Status _status = new Status();
-    private bool _updateInProgress = false;
 
     private Program()
     {
@@ -171,7 +170,7 @@ internal class Program
         Debug.Assert(_textChannel != null, nameof(_textChannel) + " != null");
         
         await _textChannel.ModifyMessageAsync(_statusMessageId,
-            prop => prop.Content = _status.ToString());
+            prop => prop.Content = _status.ToString(), new RequestOptions() {RetryMode = RetryMode.AlwaysRetry});
     }
     
     public static async Task Main(string[] args)
