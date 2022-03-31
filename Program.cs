@@ -142,6 +142,7 @@ internal class Program
 
     private async void OnPrintingStatus(PrintingStatus printingStatus)
     {
+        await Console.Out.WriteLineAsync("Updating printing status");
         _status.PrintingStatus = printingStatus;
         await UpdateStatus();
         //await _client.SetStatusAsync(UserStatus.Online);
