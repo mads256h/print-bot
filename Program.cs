@@ -155,10 +155,11 @@ internal class Program
 
         _status.TemperatureInfo = temperatureInfo;
         
-        var nextPossibleUpdate = _lastUpdate + new TimeSpan(0, 0, 5);
+        var nextPossibleUpdate = _lastUpdate + new TimeSpan(0, 0, 10);
 
         if (nextPossibleUpdate < DateTime.Now)
         {
+            await Console.Out.WriteLineAsync("Updating with tempinfo");
             await UpdateStatus();
             _lastUpdate = DateTime.Now;
         }
