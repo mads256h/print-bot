@@ -133,7 +133,7 @@ internal class Program
                 return;
             }
 
-            await message.AddReactionAsync(new Emoji("✔"));
+            await message.AddReactionAsync(new Emoji("✅"));
         }
     }
 
