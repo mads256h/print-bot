@@ -156,6 +156,9 @@ internal class Program
         _status.TemperatureInfo = temperatureInfo;
         
         var nextPossibleUpdate = _lastUpdate + new TimeSpan(0, 0, 10);
+        
+        Console.WriteLine(nextPossibleUpdate);
+        Console.WriteLine(DateTime.Now);
 
         if (nextPossibleUpdate < DateTime.Now)
         {
