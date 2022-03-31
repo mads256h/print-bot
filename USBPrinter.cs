@@ -73,8 +73,14 @@ public sealed class USBPrinter : IDisposable
             {
                 break;
             }
-            
+           
+            ChangePrintingStatus(PrintingStatus.Printing);
             action(new CancellationTokenSource());
+
+            if (_actions.Count == 0)
+            {
+                ChangePrintingStatus(PrintingStatus.Idling);
+            }
         }
     }
     
@@ -87,8 +93,6 @@ public sealed class USBPrinter : IDisposable
             _currentCancellationSource = token;
         }
         
-        ChangePrintingStatus(PrintingStatus.Printing);
-        
         while (!token.IsCancellationRequested && _commandQueue.TryDequeue(out var command))
         {
             HandleCommand(command);
@@ -97,7 +101,6 @@ public sealed class USBPrinter : IDisposable
         if (_actions.Count == 0)
         {
             Reset(new CancellationTokenSource());
-            ChangePrintingStatus(PrintingStatus.Idling);
         }
         /*
         lock (_currentCancellationSource)
@@ -296,11 +299,9 @@ public sealed class USBPrinter : IDisposable
 
             var temperatureInfo = new TemperatureInfo(extruderTemp, bedTemp);
             _eventQueue.Add(() => OnTemperatureInfo?.Invoke(temperatureInfo));
-            ChangePrintingStatus(PrintingStatus.Heating);
         }
 
         Console.WriteLine(t);
-        ChangePrintingStatus(PrintingStatus.Printing);
     }
 
     public void Dispose()

@@ -154,27 +154,13 @@ internal class Program
         await Console.Out.WriteLineAsync(temperatureInfo.ToString());
 
         _status.TemperatureInfo = temperatureInfo;
-        
-        var nextPossibleUpdate = _lastUpdate + new TimeSpan(0, 0, 10);
-        
-        Console.WriteLine(nextPossibleUpdate);
-        Console.WriteLine(DateTime.Now);
-
-        if (nextPossibleUpdate < DateTime.Now)
-        {
-            await Console.Out.WriteLineAsync("Updating with tempinfo");
-            await UpdateStatus();
-            Console.WriteLine("Done with updating tempinfo");
-            _lastUpdate = DateTime.Now;
-        }
     }
 
     private async Task UpdateStatus()
     {
         Debug.Assert(_textChannel != null, nameof(_textChannel) + " != null");
-        
-        _textChannel.ModifyMessageAsync(_statusMessageId,
-            prop => prop.Content = _status.ToString(), new RequestOptions() {RetryMode = RetryMode.AlwaysRetry});
+
+        await _textChannel.SendMessageAsync(_status.ToString());
     }
     
     public static async Task Main(string[] args)
