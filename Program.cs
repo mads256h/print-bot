@@ -87,6 +87,8 @@ internal class Program
         Debug.Assert(_textChannel != null, nameof(_textChannel) + " != null");
         Debug.Assert(_usbPrinter != null, nameof(_usbPrinter) + " != null");
 
+        if (message.Author.IsBot) return;
+
         if (message.Channel.Id == _textChannel.Id)
         {
             var content = message.Content;
@@ -128,6 +130,7 @@ internal class Program
             else
             {
                 await message.AddReactionAsync(new Emoji("❌"));
+                return;
             }
 
             await message.AddReactionAsync(new Emoji("✔"));
